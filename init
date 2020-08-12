@@ -1,0 +1,30 @@
+#!/bin/sh
+set -e
+for t in rsa ecdsa ed25519; do
+  if [ ! -f /etc/ssh/ssh_host_${t}_key ]; then
+    echo >&2 "generating ${t} host key..."
+    ssh-keygen -t ${t} -f /etc/ssh/ssh_host_${t}_key -N '' -q
+  else
+    echo >&2 "using pre-existing ${t} host key..."
+  fi
+done
+if [ "x$SSH_USER" != "x" ]; then
+  new_user=${SSH_USER}
+  new_uid=${SSH_UID:-1000}
+  echo >&2 "creating user $new_user (uid:${new_uid})..."
+  adduser -u "${new_uid}" -h /home/"${new_user}" -D "${new_user}"
+  passwd -u "${new_user}"
+
+  if [ ! -d "/home/${new_user}/.ssh" ]; then
+    mkdir -p /home/${new_user}/.ssh;
+    if [ "x$SSH_KEYS_FROM" != "x" ]; then
+      for k in `find $SSH_KEYS_FROM -type f -name '*.pub'`; do
+        cat $k >> /home/${new_user}/.ssh/authorized_keys
+      done
+    fi
+  fi
+  chown -R ${new_user} /home/${new_user}/.ssh
+  chmod 0500 /home/${new_user}/.ssh
+fi
+echo >&2 "executing sshd in the foreground..."
+exec /usr/sbin/sshd -D -e

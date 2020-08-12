@@ -1,0 +1,81 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: sandbox
+  name:      ssh-keys
+data:
+  jhunt-at-EVERYWHERE.pub: |
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKF3JPSfD1e92ryLKxYlSlXtDmbUUe0EOalBAJvthCmK jhunt@EVERYWHERE
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: sandbox
+  name:      ssh-git
+spec:
+  type: ClusterIP
+  selector:
+    app: ssh-git
+  ports:
+    - name: ssh
+      port: 22
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: sandbox
+  name:       ssh-git
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ssh-git
+  template:
+    metadata:
+      labels:
+        app: ssh-git
+    spec:
+      volumes:
+        - name: ssh-keys
+          configMap:
+            name: ssh-keys
+        - name: repos
+          ephemeral: # FIXME <------ you probably want a persistentVolumeClaim here!
+
+      initContainers:
+        - name: init
+          image: filefrog/ssh-git
+          command:
+            - /bin/sh
+            - -c
+            - |
+              git init --bare /git/foo.git
+              git init --bare /git/bar.git
+              chown -R 1000 /git
+          volumeMounts:
+            - name: repos
+              mountPath: /git
+
+      containers:
+        - name: ssh-git
+          image: filefrog/ssh-git
+          env:
+            - name:  SSH_USER
+              value: jhunt
+            - name:  SSH_UID
+              value: "1000"
+            - name:  SSH_KEYS_FROM
+              value: /home/jhunt/pubkeys
+          volumeMounts:
+            - name: repos
+              mountPath: /home/jhunt/repos
+            - name: ssh-keys
+              mountPath: /home/jhunt/pubkeys
+          ports:
+            - name: ssh
+              protocol: TCP
+              containerPort: 2020
+
